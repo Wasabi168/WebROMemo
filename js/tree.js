@@ -728,18 +728,44 @@
     return rows[a.length][b.length];
   }
 
+  function plainName(value) {
+    return String(value || "").replace(/[・·•‧･．.]/g, "");
+  }
+
+  function exactTalent(name, pool) {
+    const plain = plainName(name);
+    if (plain.length < 2) return [];
+    return pool.filter((node) => node.n === name || plainName(node.n) === plain);
+  }
+
   function matchTalent(name, pool) {
-    const exact = pool.filter((node) => node.n === name);
+    const exact = exactTalent(name, pool);
     if (exact.length) return exact;
-    if (name.length < 3) return [];
-    let best = null;
+    if (plainName(name).length < 2) return [];
+    let bestGap = Infinity;
+    let best = [];
     for (const node of pool) {
-      if (Math.abs(node.n.length - name.length) > 1) continue;
-      if (distance(name, node.n) !== 1) continue;
       const gap = Math.abs(node.n.length - name.length);
-      if (!best || gap < best.gap) best = { node, gap };
+      if (gap > 1) continue;
+      if (distance(name, node.n) !== 1) continue;
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = [node];
+      } else if (gap === bestGap) best.push(node);
     }
-    return best ? [best.node] : [];
+    return new Set(best.map((node) => node.n)).size === 1 ? best : [];
+  }
+
+  function takeTalent(names, index, pool) {
+    const one = exactTalent(names[index], pool);
+    if (one.length) return { hits: one, take: 1 };
+    for (let take = 2; take <= 3 && index + take <= names.length; take += 1) {
+      const hits = exactTalent(names.slice(index, index + take).join(""), pool);
+      if (hits.length) return { hits, take };
+    }
+    const fuzzy = matchTalent(names[index], pool);
+    if (fuzzy.length) return { hits: fuzzy, take: 1 };
+    return { hits: [], take: 1 };
   }
 
   function applyTalentText(raw) {
@@ -748,13 +774,15 @@
     const ids = new Set();
     const missed = [];
     const found = [];
-    for (const name of names) {
-      const hits = matchTalent(name, pool);
-      if (!hits.length) {
-        missed.push(name);
+    for (let i = 0; i < names.length;) {
+      const picked = takeTalent(names, i, pool);
+      i += picked.take;
+      if (!picked.hits.length) {
+        const token = names[i - 1];
+        if (token.length >= 2) missed.push(token);
         continue;
       }
-      for (const node of hits) {
+      for (const node of picked.hits) {
         ids.add(node.id);
         if (!found.includes(node.n)) found.push(node.n);
       }

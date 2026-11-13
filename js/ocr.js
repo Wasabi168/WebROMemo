@@ -325,7 +325,8 @@
     return squeezeCjk(String(line || "")
       .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
       .replace(/[：:]/g, "：")
-      .replace(/[，,]/g, "、"))
+      .replace(/[，,]/g, "、")
+      .replace(/[·•‧･．.]/g, "・"))
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -338,12 +339,12 @@
       if (prev && !/[、：]$/.test(prev) && !/^(專精|交會|終極|天賦)/.test(line)) joined[joined.length - 1] = prev + line;
       else joined.push(line);
     }
-    const text = joined.join("\n").replace(/天賦樹/g, "").replace(/點亮\s*\d+\s*個\s*節點/g, "");
+    const text = joined.join("\n").replace(/天[上卜]?賦樹/g, "").replace(/點亮\s*\d+\s*個\s*節點/g, "");
     const skip = new Set(["點亮", "節點", "個節點", "終極天賦", "專精", "交會", "沒有", "天賦", "終極"]);
     const names = [];
     for (const part of text.split(/[\n、]/)) {
       const name = part.replace(/.*：/, "").replace(/[^\u4e00-\u9fff・]/g, "");
-      if (!name || skip.has(name) || name.length < 2 || name.length > 10 || names.includes(name)) continue;
+      if (!name || skip.has(name) || name.length > 10 || names.includes(name)) continue;
       names.push(name);
     }
     return names;
