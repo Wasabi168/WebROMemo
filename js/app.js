@@ -38,6 +38,7 @@
     compare: new Set(),
     draft: null,
     armDelete: "",
+    navFolded: false,
   };
 
   const urls = new Map();
@@ -100,7 +101,7 @@
   function draftHasContent(build) {
     if (!build) return false;
     if (Store.imageIds(build).length) return true;
-    return ["player", "job", "cls", "floor", "time", "dps", "note"].some((key) => build[key]);
+    return ["player", "job", "cls", "style", "level", "floor", "time", "dps", "note"].some((key) => build[key]);
   }
 
   function blankBuild() {
@@ -111,6 +112,7 @@
       player: "",
       job: "",
       cls: state.cls || "",
+      style: "",
       level: "",
       floor: "",
       time: "",
@@ -214,10 +216,31 @@
     if (state.view === "detail") scheduleSave(build);
   }
 
-  function pickGearFile(slot) {
+  let warnedClipboardChoice = false;
+
+  async function clipboardPermissionState() {
+    try {
+      if (!navigator.permissions?.query) return "unknown";
+      const status = await navigator.permissions.query({ name: "clipboard-read" });
+      return status.state;
+    } catch {
+      return "unknown";
+    }
+  }
+
+  async function pasteGear(slot) {
+    const pending = navigator.clipboard?.read?.();
     state.page = "eq";
     state.gearSlot = slot;
-    document.querySelector("#gear-file").click();
+    const placed = await pasteClipboard(pending);
+    if (!placed) {
+      await render();
+      return;
+    }
+    if (warnedClipboardChoice) return;
+    if ((await clipboardPermissionState()) === "granted") return;
+    warnedClipboardChoice = true;
+    setStatus(`已放入「${gearName(slot)}」。請在詢問視窗選「允許」，不要選「僅這一次」，之後再貼就不會再問。`);
   }
 
   function scheduleSave(build) {
@@ -237,7 +260,7 @@
       if (state.cls && build.cls !== state.cls) return false;
       if (state.job && !(build.job || "").includes(state.job)) return false;
       if (!query) return true;
-      return `${build.player}\n${build.job}\n${build.note}\n${build.floor}`.toLowerCase().includes(query);
+      return `${build.player}\n${build.job}\n${build.style || ""}\n${build.level || ""}\n${build.note}\n${build.floor}`.toLowerCase().includes(query);
     });
     rows.sort((a, b) => {
       if (state.sort === "floor") return (Number(b.floor) || 0) - (Number(a.floor) || 0) || b.updated - a.updated;
@@ -251,18 +274,58 @@
   }
 
   function renderNav() {
-    const buttons = [`<button type="button" data-action="cls" data-cls="" aria-pressed="${state.cls === ""}"><span>全部</span><small>${countFor("")}</small></button>`];
+    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card";
+    const foldLabel = state.navFolded ? "展開導覽" : "收合導覽";
+    const buttons = [
+      iconBtn("nav-fold", foldLabel, "back", { className: "nav-fold", attrs: `aria-expanded="${state.navFolded ? "false" : "true"}"` }),
+      `<button class="tree-nav" type="button" data-action="tree" aria-pressed="${state.view === "tree"}"><span>天賦樹</span><small>搜尋</small></button>`,
+      `<button class="tree-nav" type="button" data-action="gear" aria-pressed="${state.view === "gear"}"><span>裝備清單</span><small>${window.XJGearData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="card" aria-pressed="${state.view === "card"}"><span>卡片清單</span><small>${window.XJCardData?.items.length || ""}</small></button>`,
+      `<button type="button" data-action="cls" data-cls="" aria-pressed="${browsing && state.cls === ""}"><span>全部</span><small>${countFor("")}</small></button>`,
+    ];
     for (const cls of CLASSES) {
       buttons.push(
-        `<button type="button" data-action="cls" data-cls="${cls.id}" aria-pressed="${state.cls === cls.id}"><span><i class="swatch ${cls.id}"></i>${esc(cls.name)}</span><small>${countFor(cls.id)}</small></button>`,
+        `<button type="button" data-action="cls" data-cls="${cls.id}" aria-pressed="${browsing && state.cls === cls.id}"><span><i class="swatch ${cls.id}"></i>${esc(cls.name)}</span><small>${countFor(cls.id)}</small></button>`,
       );
     }
     nav.innerHTML = buttons.join("");
+    applyNavFold();
+  }
+
+  function applyNavFold() {
+    document.querySelector(".layout").classList.toggle("nav-folded", state.navFolded);
+    const button = nav.querySelector(".nav-fold");
+    if (!button) return;
+    const label = state.navFolded ? "展開導覽" : "收合導覽";
+    button.setAttribute("aria-expanded", String(!state.navFolded));
+    button.setAttribute("aria-label", label);
+    button.title = label;
   }
 
   async function render() {
     const token = ++seq;
     renderNav();
+    if (state.view === "tree") {
+      if (token !== seq) return;
+      window.XJGear?.unmount();
+      window.XJCard?.unmount();
+      window.XJTree.mount(main);
+      return;
+    }
+    window.XJTree?.unmount();
+    if (state.view === "gear") {
+      if (token !== seq) return;
+      window.XJCard?.unmount();
+      window.XJGear.mount(main);
+      return;
+    }
+    window.XJGear?.unmount();
+    if (state.view === "card") {
+      if (token !== seq) return;
+      window.XJCard.mount(main);
+      return;
+    }
+    window.XJCard?.unmount();
     let html = "";
     if (state.view === "draft") html = await draftHtml();
     else if (state.view === "detail") html = await detailHtml(current());
@@ -350,7 +413,8 @@
       const shot = build.pages?.eq?.imageId || build.pages?.board?.imageId || build.pages?.tal?.imageId || build.pages?.attr?.imageId;
       const url = shot ? await urlFor(shot) : "";
       const title = build.player || build.job || "未命名構築";
-      const meta = [build.job, build.floor ? `${build.floor} 層` : "", build.time || ""].filter(Boolean).join(" · ");
+      const jobLabel = build.job ? `${build.job}${build.style ? `（${build.style}）` : ""}` : (build.style || "");
+      const meta = [jobLabel, build.floor ? `${build.floor} 層` : "", build.time || ""].filter(Boolean).join(" · ");
       cards.push(`<article class="card">
         <button class="card-open" type="button" data-action="open" data-id="${build.id}">
           ${url ? `<img class="thumb" alt="" src="${url}">` : `<span class="thumb empty">尚未貼上截圖</span>`}
@@ -421,9 +485,12 @@
 
   function headerFields(build) {
     const options = classOptions(build.cls);
-    return `<div class="fields">
+    return `<div class="ocr-row">${iconBtn("ocr", "貼上剪貼簿辨識", "paste", { className: "primary" })}</div>
+    <div class="fields">
       <label class="field">玩家<input data-field="player" value="${esc(build.player)}" maxlength="16"></label>
       <label class="field">職業<select data-field="job">${jobMenu(build.job)}</select></label>
+      <label class="field">流派<input data-field="style" value="${esc(build.style)}" placeholder="技能流"></label>
+      <label class="field">等級<input data-field="level" value="${esc(build.level)}" inputmode="numeric"></label>
       <label class="field">分類<select data-field="cls">${options}</select></label>
       <label class="field">層數<input data-field="floor" value="${esc(build.floor)}" inputmode="numeric"></label>
       <label class="field">用時<input data-field="time" value="${esc(build.time)}" placeholder="0:51"></label>
@@ -444,7 +511,7 @@
       if (extraUrl) extras.push(`<figure><img alt="" src="${extraUrl}" draggable="false"><figcaption>${esc(extra.caption || "補充")}</figcaption></figure>`);
     }
     const placeholder = focusingGear
-      ? iconBtn("gear-upload", `上傳${label}細節`, "upload", { className: "xl", attrs: `data-slot="${state.gearSlot}"` })
+      ? iconBtn("gear-paste", `貼上${label}`, "plus", { className: "xl", attrs: `data-slot="${state.gearSlot}"` })
       : iconBtn("paste", "貼上剪貼簿", "paste", { className: "xl" });
     return `<div class="shot-wrap">
       <div class="pager">${PAGES.map((item) => `<button type="button" data-action="page" data-page="${item.id}" aria-pressed="${state.page === item.id}">${item.name}</button>`).join("")}${iconBtn("paste", "貼上剪貼簿", "paste")}</div>
@@ -460,11 +527,12 @@
       const imageId = build.gear?.[slot.id]?.imageId;
       const url = imageId ? await urlFor(imageId) : "";
       const selected = state.gearSlot === slot.id;
+      const openLabel = url ? slot.name : `貼上${slot.name}`;
       cells.push(`<div class="gear-slot${selected ? " selected" : ""}">
-        <button type="button" class="gear-open" data-action="gear" data-slot="${slot.id}" aria-pressed="${selected}" aria-label="${esc(slot.name)}">${url ? `<img alt="" src="${url}" draggable="false">` : icon("upload")}</button>
+        <button type="button" class="gear-open" data-action="${url ? "gear" : "gear-paste"}" data-slot="${slot.id}" aria-pressed="${selected}" aria-label="${esc(openLabel)}">${url ? `<img alt="" src="${url}" draggable="false">` : icon("plus")}</button>
         <span>${esc(slot.name)}</span>
         <div class="gear-tools">
-          ${iconBtn("gear-upload", `上傳${slot.name}`, "upload", { className: "tiny", attrs: `data-slot="${slot.id}"` })}
+          ${url ? iconBtn("gear-paste", `貼上${slot.name}`, "plus", { className: "tiny", attrs: `data-slot="${slot.id}"` }) : ""}
           ${url ? iconBtn("gear-clear", `移除${slot.name}`, "close", { className: "tiny", attrs: `data-slot="${slot.id}"` }) : ""}
         </div>
       </div>`);
@@ -482,7 +550,7 @@
         ${await shotHtml(build)}
         <div class="sheet">
           ${headerFields(build)}
-          <p class="hint">滾輪放大縮小，放大後按住拖曳。1 到 4 切換頁面，貼上會蓋掉目前這一頁。</p>
+          <p class="hint">滾輪放大縮小，放大後按住拖曳。1 到 4 切換頁面，貼上會蓋掉目前這一頁。裝備格子按 + 會從剪貼簿放入，瀏覽器只在第一次問是否允許。</p>
         </div>
       </div>`;
   }
@@ -497,7 +565,7 @@
         ${iconBtn("discard-draft", "放棄這幾張", "close")}
       </div>
       ${similar ? `<div class="banner"><span>清單裡已有「${esc(similar.player)}」第 ${esc(similar.floor)} 層。可以把這次的截圖補進那一筆。</span>${iconBtn("merge-draft", "補進原紀錄", "merge", { className: "primary", attrs: `data-id="${similar.id}"` })}</div>` : ""}
-      <p class="hint">按剪貼簿圖示貼上，會依序放到裝備、技能盤、天賦、屬性。要重貼某一頁，先點那個頁籤。</p>
+      <p class="hint">按剪貼簿圖示貼上，會依序放到裝備、技能盤、天賦、屬性。要重貼某一頁，先點那個頁籤。裝備格子按 + 會從剪貼簿放入，瀏覽器只在第一次問是否允許。</p>
       <div class="detail">
         ${await shotHtml(build)}
         <div class="sheet">
@@ -529,6 +597,56 @@
     build[field] = value;
   }
 
+  function jobNames() {
+    return CLASSES.flatMap((cls) => cls.lines.flat());
+  }
+
+  function applyRank(build, parsed) {
+    const labels = [];
+    const set = (key, value, label) => {
+      if (!value) return;
+      build[key] = value;
+      labels.push(label);
+    };
+    set("player", parsed.player, "玩家");
+    if (parsed.job) {
+      build.job = parsed.job;
+      const owner = CLASSES.find((cls) => cls.lines.flat().includes(parsed.job));
+      if (owner) build.cls = owner.id;
+      labels.push("職業");
+    }
+    set("style", parsed.style, "流派");
+    set("level", parsed.level, "等級");
+    set("floor", parsed.floor, "層數");
+    set("time", parsed.time, "用時");
+    set("dps", parsed.dps, "DPS");
+    return labels;
+  }
+
+  let ocrBusy = false;
+
+  async function recognizeRankClipboard(pending) {
+    const build = activeBuild();
+    if (!build || ocrBusy) return;
+    const files = await readClipboardFiles(pending);
+    if (!files.length) return;
+    ocrBusy = true;
+    setStatus("正在辨識排行截圖…");
+    try {
+      const parsed = await window.XJOcr.recognizeRank(files[0], jobNames(), setStatus);
+      const labels = applyRank(build, parsed);
+      if (!labels.length) {
+        setStatus("這張圖認不出排行資訊");
+        return;
+      }
+      if (state.view === "detail") await persist(build);
+      setStatus(`已填入${labels.join("、")}`);
+      await render();
+    } finally {
+      ocrBusy = false;
+    }
+  }
+
   async function moveBuild(id, clsId) {
     const build = state.builds.find((item) => item.id === id);
     if (!build) return;
@@ -551,7 +669,21 @@
     const el = event.target.closest("[data-action]");
     if (!el || el.matches("input, select, textarea")) return;
     const action = el.dataset.action;
-    if (action === "cls") {
+    if (action === "nav-fold") {
+      state.navFolded = !state.navFolded;
+      applyNavFold();
+      return;
+    }
+    if (action === "tree") {
+      state.view = "tree";
+      await render();
+    } else if (action === "gear" && !el.dataset.slot) {
+      state.view = "gear";
+      await render();
+    } else if (action === "card") {
+      state.view = "card";
+      await render();
+    } else if (action === "cls") {
       state.cls = el.dataset.cls || "";
       state.job = "";
       state.view = "list";
@@ -571,6 +703,9 @@
       state.view = "list";
       state.armDelete = "";
       await render();
+    } else if (action === "ocr") {
+      const pending = navigator.clipboard?.read?.();
+      await recognizeRankClipboard(pending);
     } else if (action === "paste") {
       await pasteClipboard();
     } else if (action === "page") {
@@ -582,17 +717,11 @@
       }
       await render();
     } else if (action === "gear") {
-      const slot = el.dataset.slot;
-      state.page = "eq";
-      state.gearSlot = slot;
-      const build = activeBuild();
-      if (!build?.gear?.[slot]?.imageId) pickGearFile(slot);
-      await render();
-    } else if (action === "gear-upload") {
       state.page = "eq";
       state.gearSlot = el.dataset.slot;
-      pickGearFile(el.dataset.slot);
       await render();
+    } else if (action === "gear-paste") {
+      await pasteGear(el.dataset.slot);
     } else if (action === "gear-clear") {
       const build = activeBuild();
       const slot = el.dataset.slot;
@@ -667,7 +796,7 @@
   }
 
   function fillMissing(target, source) {
-    for (const key of ["player", "job", "cls", "floor", "time", "dps", "note"]) {
+    for (const key of ["player", "job", "cls", "style", "level", "floor", "time", "dps", "note"]) {
       if (!target[key] && source[key]) target[key] = source[key];
     }
   }
@@ -735,17 +864,17 @@
     return [...(data?.items || [])].filter((item) => item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
   }
 
-  async function pasteClipboard() {
-    if (!navigator.clipboard?.read) {
+  async function readClipboardFiles(pending) {
+    if (!pending && !navigator.clipboard?.read) {
       setStatus("這個瀏覽器讀不到剪貼簿");
-      return;
+      return [];
     }
     let items = [];
     try {
-      items = await navigator.clipboard.read();
+      items = await (pending || navigator.clipboard.read());
     } catch {
       setStatus("沒有取得剪貼簿，請允許這個頁面讀取");
-      return;
+      return [];
     }
     const files = [];
     for (const item of items) {
@@ -754,11 +883,15 @@
       const blob = await item.getType(type);
       files.push(new File([blob], "clipboard.png", { type: blob.type || type }));
     }
-    if (!files.length) {
-      setStatus("剪貼簿裡沒有圖片");
-      return;
-    }
+    if (!files.length) setStatus("剪貼簿裡沒有圖片");
+    return files;
+  }
+
+  async function pasteClipboard(pending) {
+    const files = await readClipboardFiles(pending);
+    if (!files.length) return false;
     await takeFiles(files);
+    return true;
   }
 
   async function startDraft() {
@@ -856,11 +989,6 @@
     event.target.value = "";
     if (file) importJson(file).catch(() => setStatus("這個檔案讀不起來"));
   });
-  document.querySelector("#gear-file").addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) ingest(file).catch((error) => setStatus(error.message || "上傳失敗"));
-  });
   qEl.addEventListener("input", () => {
     state.q = qEl.value;
     if (state.view === "list") render();
@@ -916,6 +1044,30 @@
     if (event.key === "Escape" && state.gearSlot && (state.view === "detail" || state.view === "draft")) {
       state.gearSlot = "";
       render();
+      return;
+    }
+    if ((event.key === "t" || event.key === "T") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "tree") window.XJTree.focusSearch();
+      else {
+        state.view = "tree";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "g" || event.key === "G") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "gear") window.XJGear.focusSearch();
+      else {
+        state.view = "gear";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "c" || event.key === "C") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "card") window.XJCard.focusSearch();
+      else {
+        state.view = "card";
+        render();
+      }
       return;
     }
     if (event.key === "Escape" && state.view !== "list") {
