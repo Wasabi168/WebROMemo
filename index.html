@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>流浪仙境構築筆記</title>
+  <link rel="stylesheet" href="css/app.css?v=12">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <p class="eyebrow">xianjing.dev</p>
+      <h1>構築筆記</h1>
+    </div>
+    <label class="search">
+      <input id="q" type="search" placeholder="搜尋玩家、職業、備註" autocomplete="off">
+    </label>
+    <div class="header-actions">
+      <div class="icon-group">
+        <button class="icon-btn primary" id="add-blank" type="button" aria-label="新增紀錄" title="新增紀錄"></button>
+        <button class="icon-btn" id="paste-clip" type="button" aria-label="貼上剪貼簿" title="貼上剪貼簿"></button>
+      </div>
+      <button class="icon-btn" id="export" type="button" aria-label="匯出" title="匯出"></button>
+      <button class="icon-btn" id="import" type="button" aria-label="匯入" title="匯入"></button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
+      <input id="gear-file" type="file" accept="image/*" hidden>
+    </div>
+  </header>
+  <div id="status" class="status" role="status"></div>
+  <div class="layout">
+    <nav class="nav" id="nav" aria-label="職業"></nav>
+    <main id="main"></main>
+  </div>
+  <div id="drop" class="drop">放開即可收錄截圖</div>
+  <script src="js/store.js?v=4"></script>
+  <script src="js/app.js?v=12"></script>
+</body>
+</html>
