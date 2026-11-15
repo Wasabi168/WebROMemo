@@ -85,8 +85,8 @@
       check: `<path d="M5 12.5 10 17.5 19 7"/>`,
       trash: `<path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13"/>`,
       close: `<path d="M7 7l10 10M17 7 7 17"/>`,
-      download: `<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>`,
-      upload: `<path d="M12 16V5M7 9l5-5 5 5M5 20h14"/>`,
+      download: `<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M12 10v7"/><path d="m9 14 3 3 3-3"/>`,
+      upload: `<path d="M11 8h3.5L16 10h5v9H11z"/><path d="M3 14.5h8"/><path d="m8 11.5 3 3-3 3"/>`,
       columns: `<rect x="4" y="5" width="6" height="14" rx="1"/><rect x="14" y="5" width="6" height="14" rx="1"/>`,
       pencil: `<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/>`,
       merge: `<path d="M4 7h10a4 4 0 0 1 0 8H8"/><path d="m10 12-3 3 3 3"/>`,
@@ -254,14 +254,7 @@
     }, 250);
   }
 
-  function visibleBuilds() {
-    const query = state.q.trim().toLowerCase();
-    const rows = state.builds.filter((build) => {
-      if (state.cls && build.cls !== state.cls) return false;
-      if (state.job && !(build.job || "").includes(state.job)) return false;
-      if (!query) return true;
-      return `${build.player}\n${build.job}\n${build.style || ""}\n${build.level || ""}\n${build.note}\n${build.floor}`.toLowerCase().includes(query);
-    });
+  function sortBuilds(rows) {
     rows.sort((a, b) => {
       if (state.sort === "floor") return (Number(b.floor) || 0) - (Number(a.floor) || 0) || b.updated - a.updated;
       return b.updated - a.updated;
@@ -269,18 +262,52 @@
     return rows;
   }
 
+  function onClassPage(build) {
+    if (state.cls && build.cls !== state.cls) return false;
+    if (state.job && !(build.job || "").includes(state.job)) return false;
+    return true;
+  }
+
+  function visibleBuilds() {
+    const query = state.q.trim().toLowerCase();
+    const rows = state.builds.filter((build) => {
+      if (!onClassPage(build)) return false;
+      if (!query) return true;
+      return `${build.player}\n${build.job}\n${build.style || ""}\n${build.level || ""}\n${build.note}\n${build.floor}`.toLowerCase().includes(query);
+    });
+    return sortBuilds(rows);
+  }
+
+  function comparedBuilds() {
+    const rows = sortBuilds(state.builds.filter((build) => state.compare.has(build.id) && onClassPage(build)));
+    if (state.cls || rows.length < 2) return rows;
+    const classes = [...new Set(rows.map((build) => build.cls || ""))];
+    if (classes.length <= 1) return rows;
+    const counts = new Map(classes.map((cls) => [cls, rows.filter((build) => (build.cls || "") === cls).length]));
+    const cls = classes.slice().sort((a, b) => counts.get(b) - counts.get(a) || classes.indexOf(a) - classes.indexOf(b))[0];
+    return rows.filter((build) => (build.cls || "") === cls);
+  }
+
+  function compareLabel() {
+    const count = comparedBuilds().length;
+    return count >= 2 ? `並排 ${count}` : "並排";
+  }
+
   function countFor(clsId) {
     return state.builds.filter((build) => !clsId || build.cls === clsId).length;
   }
 
   function renderNav() {
-    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card";
+    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card" && state.view !== "skill" && state.view !== "misc" && state.view !== "ail";
     const foldLabel = state.navFolded ? "展開導覽" : "收合導覽";
     const buttons = [
       iconBtn("nav-fold", foldLabel, "back", { className: "nav-fold", attrs: `aria-expanded="${state.navFolded ? "false" : "true"}"` }),
       `<button class="tree-nav" type="button" data-action="tree" aria-pressed="${state.view === "tree"}"><span>天賦樹</span><small>搜尋</small></button>`,
       `<button class="tree-nav" type="button" data-action="gear" aria-pressed="${state.view === "gear"}"><span>裝備清單</span><small>${window.XJGearData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="card" aria-pressed="${state.view === "card"}"><span>卡片清單</span><small>${window.XJCardData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="skill" aria-pressed="${state.view === "skill"}"><span>技能清單</span><small>${window.XJSkillData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="misc" aria-pressed="${state.view === "misc"}"><span>雜物清單</span><small>${window.XJMiscData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="ail" aria-pressed="${state.view === "ail"}"><span>狀態效果</span><small>${window.XJAilData?.items.length || ""}</small></button>`,
       `<button type="button" data-action="cls" data-cls="" aria-pressed="${browsing && state.cls === ""}"><span>全部</span><small>${countFor("")}</small></button>`,
     ];
     for (const cls of CLASSES) {
@@ -309,6 +336,9 @@
       if (token !== seq) return;
       window.XJGear?.unmount();
       window.XJCard?.unmount();
+      window.XJSkill?.unmount();
+      window.XJMisc?.unmount();
+      window.XJAil?.unmount();
       window.XJTree.mount(main);
       return;
     }
@@ -316,16 +346,43 @@
     if (state.view === "gear") {
       if (token !== seq) return;
       window.XJCard?.unmount();
+      window.XJSkill?.unmount();
+      window.XJMisc?.unmount();
+      window.XJAil?.unmount();
       window.XJGear.mount(main);
       return;
     }
     window.XJGear?.unmount();
     if (state.view === "card") {
       if (token !== seq) return;
+      window.XJSkill?.unmount();
+      window.XJMisc?.unmount();
+      window.XJAil?.unmount();
       window.XJCard.mount(main);
       return;
     }
     window.XJCard?.unmount();
+    if (state.view === "skill") {
+      if (token !== seq) return;
+      window.XJMisc?.unmount();
+      window.XJAil?.unmount();
+      window.XJSkill.mount(main);
+      return;
+    }
+    window.XJSkill?.unmount();
+    if (state.view === "misc") {
+      if (token !== seq) return;
+      window.XJAil?.unmount();
+      window.XJMisc.mount(main);
+      return;
+    }
+    window.XJMisc?.unmount();
+    if (state.view === "ail") {
+      if (token !== seq) return;
+      window.XJAil.mount(main);
+      return;
+    }
+    window.XJAil?.unmount();
     let html = "";
     if (state.view === "draft") html = await draftHtml();
     else if (state.view === "detail") html = await detailHtml(current());
@@ -338,7 +395,7 @@
 
   function bindZoom() {
     for (const frame of main.querySelectorAll(".shot, .compare article")) {
-      const img = frame.querySelector("img");
+      const img = frame.querySelector(":scope > img");
       if (!img) continue;
       let scale = 1;
       let x = 0;
@@ -441,7 +498,7 @@
           <option value="updated" ${state.sort === "updated" ? "selected" : ""}>最近更新</option>
           <option value="floor" ${state.sort === "floor" ? "selected" : ""}>層數高的在前</option>
         </select>
-        ${iconBtn("compare-open", state.compare.size >= 2 ? `並排 ${state.compare.size}` : "並排", "columns", { attrs: state.compare.size < 2 ? "disabled" : "" })}
+        ${iconBtn("compare-open", compareLabel(), "columns", { attrs: comparedBuilds().length < 2 ? "disabled" : "" })}
       </div>
       ${body}`;
   }
@@ -574,23 +631,43 @@
       </div>`;
   }
 
+  async function compareGearHtml(build) {
+    const cells = [];
+    for (const slot of GEAR) {
+      const imageId = build.gear?.[slot.id]?.imageId;
+      const url = imageId ? await urlFor(imageId) : "";
+      const selected = state.gearSlot === slot.id;
+      cells.push(`<button type="button" class="compare-slot${url ? " filled" : ""}" data-action="gear" data-slot="${slot.id}" aria-pressed="${selected}" aria-label="${esc(slot.name)}">${url ? `<img alt="" src="${url}" draggable="false">` : `<i></i>`}<span>${esc(slot.name)}</span></button>`);
+    }
+    return `<div class="compare-gear">${cells.join("")}</div>`;
+  }
+
   async function compareHtml() {
-    const ids = [...state.compare].filter((id) => state.builds.some((build) => build.id === id)).slice(0, 3);
+    const builds = comparedBuilds();
+    const focusingGear = state.page === "eq" && state.gearSlot;
     const blocks = [];
-    for (const id of ids) {
-      const build = state.builds.find((item) => item.id === id);
-      const page = build.pages?.[state.page];
-      const url = page?.imageId ? await urlFor(page.imageId) : "";
+    for (const build of builds) {
+      const imageId = focusingGear ? build.gear?.[state.gearSlot]?.imageId : build.pages?.[state.page]?.imageId;
+      const url = imageId ? await urlFor(imageId) : "";
+      const missing = focusingGear ? `沒有${gearName(state.gearSlot)}細項` : "這一頁沒有截圖";
+      const gear = state.page === "eq" ? await compareGearHtml(build) : "";
+      const meta = [build.job, build.floor ? `${build.floor} 層` : "", focusingGear ? gearName(state.gearSlot) : ""].filter(Boolean).join(" · ");
       blocks.push(`<article>
-        <div class="pad"><strong>${esc(build.player || "未命名")}</strong><div class="meta">${esc([build.job, build.floor ? `${build.floor} 層` : ""].filter(Boolean).join(" · "))}</div></div>
-        ${url ? `<img alt="" src="${url}" draggable="false">` : `<div class="placeholder">這一頁沒有截圖</div>`}
+        <div class="pad"><strong>${esc(build.player || "未命名")}</strong><div class="meta">${esc(meta)}</div></div>
+        ${url ? `<img alt="" src="${url}" draggable="false">` : `<div class="placeholder">${esc(missing)}</div>`}
+        ${gear}
       </article>`);
     }
+    const slots = GEAR.map((slot) => `<button type="button" data-action="gear" data-slot="${slot.id}" aria-pressed="${state.gearSlot === slot.id}">${slot.name}</button>`).join("");
+    const gearPager = state.page === "eq"
+      ? `<div class="pager compare-slots"><span>細項</span><button type="button" data-action="page" data-page="eq" aria-pressed="${!state.gearSlot}">總覽</button>${slots}</div>`
+      : "";
     return `<div class="toolbar">
       ${iconBtn("back", "返回清單", "back")}
       <div class="pager">${PAGES.map((item) => `<button type="button" data-action="page" data-page="${item.id}" aria-pressed="${state.page === item.id}">${item.name}</button>`).join("")}</div>
+      ${gearPager}
     </div>
-    <div class="compare">${blocks.join("") || `<p>先在清單勾兩筆再比較。</p>`}</div>`;
+    <div class="compare">${blocks.join("") || `<p>先在這個職業勾兩筆再比較。</p>`}</div>`;
   }
 
   function readField(build, field, value) {
@@ -683,6 +760,15 @@
     } else if (action === "card") {
       state.view = "card";
       await render();
+    } else if (action === "skill") {
+      state.view = "skill";
+      await render();
+    } else if (action === "misc") {
+      state.view = "misc";
+      await render();
+    } else if (action === "ail") {
+      state.view = "ail";
+      await render();
     } else if (action === "cls") {
       state.cls = el.dataset.cls || "";
       state.job = "";
@@ -718,7 +804,8 @@
       await render();
     } else if (action === "gear") {
       state.page = "eq";
-      state.gearSlot = el.dataset.slot;
+      const slot = el.dataset.slot;
+      state.gearSlot = state.view === "compare" && state.gearSlot === slot ? "" : slot;
       await render();
     } else if (action === "gear-paste") {
       await pasteGear(el.dataset.slot);
@@ -790,7 +877,13 @@
       state.armDelete = "";
       await render();
     } else if (action === "compare-open") {
+      const chosen = comparedBuilds();
+      const onPage = state.builds.filter((build) => state.compare.has(build.id) && onClassPage(build));
       state.view = "compare";
+      if (onPage.length > chosen.length) {
+        const name = classOf(chosen[0]?.cls)?.name || "這個職業";
+        setStatus(`只並排${name}，其他職業請到各自的頁面比較`);
+      }
       await render();
     }
   }
@@ -850,8 +943,8 @@
       else state.compare.delete(el.dataset.id);
       const button = main.querySelector("[data-action='compare-open']");
       if (button) {
-        button.disabled = state.compare.size < 2;
-        const label = state.compare.size >= 2 ? `並排 ${state.compare.size}` : "並排";
+        const label = compareLabel();
+        button.disabled = comparedBuilds().length < 2;
         button.title = label;
         button.setAttribute("aria-label", label);
       }
@@ -978,8 +1071,8 @@
 
   document.querySelector("#add-blank").innerHTML = icon("plus");
   document.querySelector("#paste-clip").innerHTML = icon("paste");
-  document.querySelector("#export").innerHTML = icon("download");
-  document.querySelector("#import").innerHTML = icon("upload");
+  document.querySelector("#export").innerHTML = `${icon("download")}<span>匯出</span>`;
+  document.querySelector("#import").innerHTML = `${icon("upload")}<span>匯入</span>`;
   document.querySelector("#add-blank").addEventListener("click", () => startDraft().catch((error) => setStatus(error.message || "新增失敗")));
   document.querySelector("#paste-clip").addEventListener("click", () => pasteClipboard().catch((error) => setStatus(error.message || "貼上失敗")));
   document.querySelector("#export").addEventListener("click", () => exportJson().catch((error) => setStatus(error.message)));
@@ -1041,7 +1134,7 @@
       if (event.key === "Escape") event.target.blur();
       return;
     }
-    if (event.key === "Escape" && state.gearSlot && (state.view === "detail" || state.view === "draft")) {
+    if (event.key === "Escape" && state.gearSlot && (state.view === "detail" || state.view === "draft" || state.view === "compare")) {
       state.gearSlot = "";
       render();
       return;
@@ -1066,6 +1159,30 @@
       if (state.view === "card") window.XJCard.focusSearch();
       else {
         state.view = "card";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "s" || event.key === "S") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "skill") window.XJSkill.focusSearch();
+      else {
+        state.view = "skill";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "m" || event.key === "M") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "misc") window.XJMisc.focusSearch();
+      else {
+        state.view = "misc";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "a" || event.key === "A") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "ail") window.XJAil.focusSearch();
+      else {
+        state.view = "ail";
         render();
       }
       return;

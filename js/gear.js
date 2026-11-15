@@ -33,7 +33,7 @@
     return data.items.filter((item) => {
       if (state.slot && item.slot !== state.slot) return false;
       if (state.kind && item.kind !== state.kind) return false;
-      if (state.source && item.source !== state.source) return false;
+      if (state.source && !(item.sources || [item.source]).includes(state.source)) return false;
       if (!query) return true;
       return `${item.name}\n${item.line}\n${item.text}\n${item.how}\n${item.note || ""}`.toLowerCase().includes(query);
     });
@@ -44,7 +44,7 @@
       <aside class="atlas-side">
         <div class="atlas-tools"><button class="icon-btn atlas-fold" id="gear-fold" type="button" aria-expanded="true" aria-label="收合清單" title="收合清單"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 8 12l6 6"/></svg></button></div>
         <label class="atlas-search">搜尋裝備<input id="gear-q" type="search" placeholder="名稱、效果、職業、取得管道" autocomplete="off"></label>
-        <p class="hint">基底是地圖掉落的裝備名稱，詞綴另外隨機。獨特才有固定效果。</p>
+        <p class="hint">基底是地圖掉落的裝備名稱，詞綴另外隨機。獨特才有固定效果。主宰是品級，取得管道寫在主宰那幾件。</p>
         <div class="gear-filters">
           ${filterGroup("gear-slots", "部位", data.slots, "data-slot", state.slot)}
           ${filterGroup("gear-kinds", "種類", data.kinds, "data-kind", state.kind)}
