@@ -1042,7 +1042,7 @@
     link.download = `流浪仙境構築筆記-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    setStatus("已下載備份。匯入時會追加，不會蓋掉現有紀錄。");
+    setStatus("已下載備份。匯入時會先清掉目前所有構築，再以這份備份覆蓋。");
   }
 
   function blobToDataUrl(blob) {
@@ -1053,36 +1053,79 @@
     });
   }
 
-  async function importJson(file) {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    const rows = Array.isArray(data.builds) ? data.builds : [];
-    let added = 0;
-    for (const row of rows) {
-      const build = { ...row };
-      delete build.images;
-      build.id = crypto.randomUUID();
-      const map = new Map();
-      for (const [oldId, dataUrl] of Object.entries(row.images || {})) {
-        const blob = await (await fetch(dataUrl)).blob();
-        const id = await Store.putImage(blob);
-        map.set(oldId, id);
-      }
-      for (const page of Object.values(build.pages || {})) {
-        if (page?.imageId && map.has(page.imageId)) page.imageId = map.get(page.imageId);
-      }
-      for (const extra of build.extras || []) {
-        if (extra.imageId && map.has(extra.imageId)) extra.imageId = map.get(extra.imageId);
-      }
-      for (const slot of Object.values(build.gear || {})) {
-        if (slot?.imageId && map.has(slot.imageId)) slot.imageId = map.get(slot.imageId);
-      }
-      build.created = Date.now();
-      await persist(build);
-      added += 1;
+  function remapBuildImages(build, map) {
+    for (const page of Object.values(build.pages || {})) {
+      if (page?.imageId && map.has(page.imageId)) page.imageId = map.get(page.imageId);
     }
-    setStatus(`已匯入 ${added} 筆`);
-    await render();
+    for (const extra of build.extras || []) {
+      if (extra.imageId && map.has(extra.imageId)) extra.imageId = map.get(extra.imageId);
+    }
+    for (const slot of Object.values(build.gear || {})) {
+      if (slot?.imageId && map.has(slot.imageId)) slot.imageId = map.get(slot.imageId);
+    }
+  }
+
+  async function clearLibrary() {
+    for (const build of state.builds) {
+      for (const id of Store.imageIds(build)) forgetUrl(id);
+    }
+    if (state.draft) {
+      for (const id of Store.imageIds(state.draft)) forgetUrl(id);
+    }
+    await Store.clearAll();
+    state.builds = [];
+    state.compare = new Set();
+    state.buildId = "";
+    state.draft = null;
+    state.view = "list";
+    state.page = "eq";
+    state.gearSlot = "";
+    state.armDelete = "";
+  }
+
+  let importBusy = false;
+
+  async function importJson(file) {
+    if (importBusy) {
+      setStatus("上一份備份還在匯入");
+      return;
+    }
+    importBusy = true;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data?.kind !== "xj-memo" || !Array.isArray(data.builds)) {
+        setStatus("這個檔案不是構築備份");
+        return;
+      }
+      const prepared = [];
+      for (const row of data.builds) {
+        const build = { ...row };
+        delete build.images;
+        if (!build.id) build.id = crypto.randomUUID();
+        if (!build.created) build.created = Date.now();
+        const images = [];
+        for (const [oldId, dataUrl] of Object.entries(row.images || {})) {
+          const blob = await (await fetch(dataUrl)).blob();
+          images.push({ oldId, blob });
+        }
+        prepared.push({ build, images });
+      }
+      await clearLibrary();
+      for (const item of prepared) {
+        const map = new Map();
+        for (const image of item.images) {
+          const id = await Store.putImage(image.blob);
+          map.set(image.oldId, id);
+        }
+        remapBuildImages(item.build, map);
+        await persist(item.build);
+      }
+      setStatus(prepared.length ? `已覆蓋匯入 ${prepared.length} 筆` : "已清除原本的構築，備份裡沒有構築");
+      await render();
+    } finally {
+      importBusy = false;
+    }
   }
 
   document.querySelector("#add-blank").innerHTML = icon("plus");
