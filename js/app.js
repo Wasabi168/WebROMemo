@@ -298,7 +298,7 @@
   }
 
   function renderNav() {
-    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card" && state.view !== "skill" && state.view !== "misc" && state.view !== "ail";
+    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card" && state.view !== "skill" && state.view !== "misc" && state.view !== "ail" && state.view !== "affix";
     const foldLabel = state.navFolded ? "展開導覽" : "收合導覽";
     const buttons = [
       iconBtn("nav-fold", foldLabel, "back", { className: "nav-fold", attrs: `aria-expanded="${state.navFolded ? "false" : "true"}"` }),
@@ -308,6 +308,7 @@
       `<button class="tree-nav" type="button" data-action="skill" aria-pressed="${state.view === "skill"}"><span>技能清單</span><small>${window.XJSkillData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="misc" aria-pressed="${state.view === "misc"}"><span>雜物清單</span><small>${window.XJMiscData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="ail" aria-pressed="${state.view === "ail"}"><span>狀態效果</span><small>${window.XJAilData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="affix" aria-pressed="${state.view === "affix"}"><span>怪物詞綴</span><small>${window.XJAffixData?.items.length || ""}</small></button>`,
       `<button type="button" data-action="cls" data-cls="" aria-pressed="${browsing && state.cls === ""}"><span>全部</span><small>${countFor("")}</small></button>`,
     ];
     for (const cls of CLASSES) {
@@ -339,6 +340,7 @@
       window.XJSkill?.unmount();
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJAffix?.unmount();
       window.XJTree.mount(main);
       return;
     }
@@ -349,6 +351,7 @@
       window.XJSkill?.unmount();
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJAffix?.unmount();
       window.XJGear.mount(main);
       return;
     }
@@ -358,6 +361,7 @@
       window.XJSkill?.unmount();
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJAffix?.unmount();
       window.XJCard.mount(main);
       return;
     }
@@ -366,6 +370,7 @@
       if (token !== seq) return;
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJAffix?.unmount();
       window.XJSkill.mount(main);
       return;
     }
@@ -373,16 +378,24 @@
     if (state.view === "misc") {
       if (token !== seq) return;
       window.XJAil?.unmount();
+      window.XJAffix?.unmount();
       window.XJMisc.mount(main);
       return;
     }
     window.XJMisc?.unmount();
     if (state.view === "ail") {
       if (token !== seq) return;
+      window.XJAffix?.unmount();
       window.XJAil.mount(main);
       return;
     }
     window.XJAil?.unmount();
+    if (state.view === "affix") {
+      if (token !== seq) return;
+      window.XJAffix.mount(main);
+      return;
+    }
+    window.XJAffix?.unmount();
     let html = "";
     if (state.view === "draft") html = await draftHtml();
     else if (state.view === "detail") html = await detailHtml(current());
@@ -768,6 +781,9 @@
       await render();
     } else if (action === "ail") {
       state.view = "ail";
+      await render();
+    } else if (action === "affix") {
+      state.view = "affix";
       await render();
     } else if (action === "cls") {
       state.cls = el.dataset.cls || "";
@@ -1183,6 +1199,14 @@
       if (state.view === "ail") window.XJAil.focusSearch();
       else {
         state.view = "ail";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "e" || event.key === "E") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "affix") window.XJAffix.focusSearch();
+      else {
+        state.view = "affix";
         render();
       }
       return;
