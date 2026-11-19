@@ -298,7 +298,7 @@
   }
 
   function renderNav() {
-    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card" && state.view !== "skill" && state.view !== "misc" && state.view !== "ail" && state.view !== "affix";
+    const browsing = state.view !== "tree" && state.view !== "gear" && state.view !== "card" && state.view !== "skill" && state.view !== "saff" && state.view !== "misc" && state.view !== "ail" && state.view !== "affix" && state.view !== "pet";
     const foldLabel = state.navFolded ? "展開導覽" : "收合導覽";
     const buttons = [
       iconBtn("nav-fold", foldLabel, "back", { className: "nav-fold", attrs: `aria-expanded="${state.navFolded ? "false" : "true"}"` }),
@@ -306,7 +306,9 @@
       `<button class="tree-nav" type="button" data-action="gear" aria-pressed="${state.view === "gear"}"><span>裝備清單</span><small>${window.XJGearData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="card" aria-pressed="${state.view === "card"}"><span>卡片清單</span><small>${window.XJCardData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="skill" aria-pressed="${state.view === "skill"}"><span>技能清單</span><small>${window.XJSkillData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="saff" aria-pressed="${state.view === "saff"}"><span>技能詞綴</span><small>${window.XJSkillAffixData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="misc" aria-pressed="${state.view === "misc"}"><span>雜物清單</span><small>${window.XJMiscData?.items.length || ""}</small></button>`,
+      `<button class="tree-nav" type="button" data-action="pet" aria-pressed="${state.view === "pet"}"><span>寵物清單</span><small>${window.XJPetData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="ail" aria-pressed="${state.view === "ail"}"><span>狀態效果</span><small>${window.XJAilData?.items.length || ""}</small></button>`,
       `<button class="tree-nav" type="button" data-action="affix" aria-pressed="${state.view === "affix"}"><span>怪物詞綴</span><small>${window.XJAffixData?.items.length || ""}</small></button>`,
       `<button type="button" data-action="cls" data-cls="" aria-pressed="${browsing && state.cls === ""}"><span>全部</span><small>${countFor("")}</small></button>`,
@@ -340,7 +342,9 @@
       window.XJSkill?.unmount();
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJSkillAffix?.unmount();
       window.XJAffix?.unmount();
+      window.XJPet?.unmount();
       window.XJTree.mount(main);
       return;
     }
@@ -351,7 +355,9 @@
       window.XJSkill?.unmount();
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJSkillAffix?.unmount();
       window.XJAffix?.unmount();
+      window.XJPet?.unmount();
       window.XJGear.mount(main);
       return;
     }
@@ -361,7 +367,9 @@
       window.XJSkill?.unmount();
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJSkillAffix?.unmount();
       window.XJAffix?.unmount();
+      window.XJPet?.unmount();
       window.XJCard.mount(main);
       return;
     }
@@ -370,7 +378,9 @@
       if (token !== seq) return;
       window.XJMisc?.unmount();
       window.XJAil?.unmount();
+      window.XJSkillAffix?.unmount();
       window.XJAffix?.unmount();
+      window.XJPet?.unmount();
       window.XJSkill.mount(main);
       return;
     }
@@ -378,24 +388,43 @@
     if (state.view === "misc") {
       if (token !== seq) return;
       window.XJAil?.unmount();
+      window.XJSkillAffix?.unmount();
       window.XJAffix?.unmount();
+      window.XJPet?.unmount();
       window.XJMisc.mount(main);
       return;
     }
     window.XJMisc?.unmount();
     if (state.view === "ail") {
       if (token !== seq) return;
+      window.XJSkillAffix?.unmount();
       window.XJAffix?.unmount();
+      window.XJPet?.unmount();
       window.XJAil.mount(main);
       return;
     }
     window.XJAil?.unmount();
+    if (state.view === "saff") {
+      if (token !== seq) return;
+      window.XJAffix?.unmount();
+      window.XJPet?.unmount();
+      window.XJSkillAffix.mount(main);
+      return;
+    }
+    window.XJSkillAffix?.unmount();
     if (state.view === "affix") {
       if (token !== seq) return;
+      window.XJPet?.unmount();
       window.XJAffix.mount(main);
       return;
     }
     window.XJAffix?.unmount();
+    if (state.view === "pet") {
+      if (token !== seq) return;
+      window.XJPet.mount(main);
+      return;
+    }
+    window.XJPet?.unmount();
     let html = "";
     if (state.view === "draft") html = await draftHtml();
     else if (state.view === "detail") html = await detailHtml(current());
@@ -776,6 +805,9 @@
     } else if (action === "skill") {
       state.view = "skill";
       await render();
+    } else if (action === "saff") {
+      state.view = "saff";
+      await render();
     } else if (action === "misc") {
       state.view = "misc";
       await render();
@@ -784,6 +816,9 @@
       await render();
     } else if (action === "affix") {
       state.view = "affix";
+      await render();
+    } else if (action === "pet") {
+      state.view = "pet";
       await render();
     } else if (action === "cls") {
       state.cls = el.dataset.cls || "";
@@ -1187,6 +1222,14 @@
       }
       return;
     }
+    if ((event.key === "v" || event.key === "V") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "saff") window.XJSkillAffix.focusSearch();
+      else {
+        state.view = "saff";
+        render();
+      }
+      return;
+    }
     if ((event.key === "m" || event.key === "M") && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (state.view === "misc") window.XJMisc.focusSearch();
       else {
@@ -1207,6 +1250,14 @@
       if (state.view === "affix") window.XJAffix.focusSearch();
       else {
         state.view = "affix";
+        render();
+      }
+      return;
+    }
+    if ((event.key === "p" || event.key === "P") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (state.view === "pet") window.XJPet.focusSearch();
+      else {
+        state.view = "pet";
         render();
       }
       return;

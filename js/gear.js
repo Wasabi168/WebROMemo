@@ -141,7 +141,6 @@
     bind();
     refresh();
     applyFold();
-    if (!state.folded) host.querySelector("#gear-q").focus();
   }
 
   function unmount() {

@@ -7,7 +7,17 @@
   const kindName = Object.fromEntries(data.kinds.map((row) => [row.id, row.name]));
   const elementName = Object.fromEntries(data.elements.map((row) => [row.id, row.name]));
   const tagName = Object.fromEntries(data.tags.map((row) => [row.id, row.name]));
-  const state = { q: "", cls: "", kind: "", tag: "", sel: "", folded: false };
+  const state = { q: "", cls: "", kind: "", tag: "", sel: "", folded: false, tagsOpen: false };
+  const DROP = 3e-5;
+  const SHUTTLE = 1e-4;
+  const channels = [
+    ["一般怪", DROP, SHUTTLE],
+    ["菁英", DROP * 5, SHUTTLE],
+    ["頭目、MVP", DROP * 50, SHUTTLE],
+    ["魔王戰", DROP * 50 / 3, SHUTTLE / 3],
+    ["闇答萊屍", 0.075, null],
+    ["組隊每層", 0.056, null],
+  ];
   let host = null;
   let onKey = null;
 
@@ -29,6 +39,26 @@
 
   function filterGroup(id, label, rows, attr, current) {
     return `<div class="gear-filter" id="${id}"><span>${label}</span><div class="atlas-filters">${chips(rows, attr, current)}</div></div>`;
+  }
+
+  function pct(rate) {
+    const value = rate * 100;
+    return `${value.toFixed(value >= 1 ? 1 : 4).replace(/\.?0+$/, "")}%`;
+  }
+
+  function acquireCard() {
+    const rows = channels.map(([name, mut, shuttle]) => `<li><span>${name}</span><b>${pct(mut)} / ${shuttle == null ? "—" : pct(shuttle)}</b></li>`).join("");
+    return `<section class="skill-acquire" aria-label="取得管道"><b>取得管道</b><small>變異 / 穿梭</small><ul>${rows}</ul><p>各地圖單隻相同。穿梭不吃菁英、頭目倍率，魔王戰再 ×1/3。商店每顆 200 Zeny。</p></section>`;
+  }
+
+  function tagGroup() {
+    return `<div class="gear-filter${state.tagsOpen ? "" : " folded"}" id="skill-tags">
+      <button class="tag-fold" id="skill-tags-fold" type="button" aria-expanded="${state.tagsOpen ? "true" : "false"}" aria-controls="skill-tag-list">
+        <span>標籤</span><small id="skill-tag-now"></small>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="atlas-filters" id="skill-tag-list">${chips(data.tags, "data-tag", state.tag)}</div>
+    </div>`;
   }
 
   function matches(item, { tag = true } = {}) {
@@ -68,8 +98,9 @@
         <div class="gear-filters">
           ${filterGroup("skill-classes", "職業", data.classes, "data-cls", state.cls)}
           ${filterGroup("skill-kinds", "種類", data.kinds, "data-kind", state.kind)}
-          ${filterGroup("skill-tags", "標籤", data.tags, "data-tag", state.tag)}
+          ${tagGroup()}
         </div>
+        ${acquireCard()}
         <p class="atlas-count" id="skill-count"></p>
         <div class="atlas-hits" id="skill-hits"></div>
       </aside>
@@ -104,7 +135,8 @@
     const base = rowsFor({ tag: false });
     const present = new Set(base.flatMap((item) => item.tags || []));
     if (state.tag && !present.has(state.tag)) state.tag = "";
-    host.querySelector("#skill-tags .atlas-filters").innerHTML = chips(data.tags.filter((tag) => present.has(tag.id)), "data-tag", state.tag);
+    host.querySelector("#skill-tag-list").innerHTML = chips(data.tags.filter((tag) => present.has(tag.id)), "data-tag", state.tag);
+    applyTags();
     const rows = state.tag ? base.filter((item) => (item.tags || []).includes(state.tag)) : base;
     if (!rows.some((item) => item.id === state.sel)) state.sel = rows[0]?.id || "";
     const focused = document.activeElement?.classList?.contains("gear-row");
@@ -133,6 +165,11 @@
       refresh();
     });
     host.addEventListener("click", (event) => {
+      if (event.target.closest("#skill-tags-fold")) {
+        state.tagsOpen = !state.tagsOpen;
+        applyTags();
+        return;
+      }
       const cls = event.target.closest("#skill-classes [data-cls]");
       const kind = event.target.closest("#skill-kinds [data-kind]");
       const tag = event.target.closest("#skill-tags [data-tag]");
@@ -160,6 +197,14 @@
     });
   }
 
+  function applyTags() {
+    const box = host.querySelector("#skill-tags");
+    const button = host.querySelector("#skill-tags-fold");
+    box.classList.toggle("folded", !state.tagsOpen);
+    button.setAttribute("aria-expanded", String(state.tagsOpen));
+    host.querySelector("#skill-tag-now").textContent = state.tag ? tagName[state.tag] || state.tag : "";
+  }
+
   function applyFold() {
     host.classList.toggle("folded", state.folded);
     const button = host.querySelector("#skill-fold");
@@ -177,7 +222,6 @@
     bind();
     refresh();
     applyFold();
-    if (!state.folded) host.querySelector("#skill-q").focus();
   }
 
   function unmount() {

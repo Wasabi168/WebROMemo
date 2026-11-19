@@ -127,7 +127,6 @@
     bind();
     refresh();
     applyFold();
-    if (!state.folded) host.querySelector("#affix-q").focus();
   }
 
   function unmount() {

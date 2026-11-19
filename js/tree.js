@@ -91,7 +91,6 @@
     applyView();
     refresh();
     applyFold();
-    if (!state.folded) host.querySelector("#tree-q").focus();
   }
 
   function unmount() {

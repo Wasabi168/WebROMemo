@@ -168,7 +168,6 @@
     bind();
     refresh();
     applyFold();
-    if (!state.folded) host.querySelector("#card-q").focus();
   }
 
   function unmount() {

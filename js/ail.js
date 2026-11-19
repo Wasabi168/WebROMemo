@@ -137,7 +137,6 @@
     bind();
     refresh();
     applyFold();
-    if (!state.folded) host.querySelector("#ail-q").focus();
   }
 
   function unmount() {
