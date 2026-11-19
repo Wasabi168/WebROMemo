@@ -81,5 +81,17 @@
     await request((await tx("images", "readwrite")).delete(id));
   }
 
-  root.XJStore = { open, listBuilds, saveBuild, deleteBuild, putImage, getImage, deleteImage, imageIds };
+  async function clearAll() {
+    const db = await open();
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(["builds", "images"], "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("清除失敗"));
+      transaction.objectStore("builds").clear();
+      transaction.objectStore("images").clear();
+    });
+  }
+
+  root.XJStore = { open, listBuilds, saveBuild, deleteBuild, putImage, getImage, deleteImage, clearAll, imageIds };
 })(typeof window !== "undefined" ? window : globalThis);
